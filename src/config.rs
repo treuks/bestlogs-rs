@@ -26,7 +26,7 @@ pub struct UmamiStats {
     url: String,
 }
 
-pub async fn get_config() -> anyhow::Result<Config> {
+pub fn get_config() -> anyhow::Result<Config> {
     const EXAMPLE_STR: &str = "./example_config.json";
     const CONFIG_STR: &str = "./config.json";
 
