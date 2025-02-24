@@ -1,30 +1,32 @@
 use std::collections::HashMap;
 
+use anyhow::bail;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
-    port: u16,
-    justlogs_instances: HashMap<String, JustlogsInstance>,
-    recentmessages_instances: HashMap<String, JustlogsInstance>,
+    pub port: u16,
+    pub justlogs_instances: HashMap<String, JustlogsInstance>,
+    pub recentmessages_instances: HashMap<String, JustlogsInstance>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    umami_stats: Option<UmamiStats>,
+    pub umami_stats: Option<UmamiStats>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-struct JustlogsInstance {
+pub struct JustlogsInstance {
     maintainer: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     alternate: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-struct UmamiStats {
+pub struct UmamiStats {
     token: String,
     id: String,
     url: String,
 }
 
-pub fn get_config() -> anyhow::Result<Config> {
+pub async fn get_config() -> anyhow::Result<Config> {
     const EXAMPLE_STR: &str = "./example_config.json";
     const CONFIG_STR: &str = "./config.json";
 
@@ -38,6 +40,9 @@ pub fn get_config() -> anyhow::Result<Config> {
             let config_json: Config = serde_json::from_str(&config_str)?;
 
             Ok(config_json)
+        }
+        (Ok(true), Ok(false)) => {
+            bail!("Example config exists but not a real config. too bad.")
         }
         _ => todo!(),
     }
