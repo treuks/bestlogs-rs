@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -15,23 +16,22 @@ use futures::future;
 use poem::{Route, Server, listener::TcpListener};
 use poem_openapi::{Object, OpenApi, OpenApiService, payload::PlainText};
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, Object)]
+#[derive(Debug, serde::Serialize, Object)]
 #[serde(rename_all = "camelCase")]
 #[oai(rename_all = "camelCase")]
 struct ChannelsOutput {
     instances_stats: InstancesStats,
-    channels: HashSet<Channel>,
+    channels: Arc<HashSet<Channel>>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, Object)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Object, serde::Serialize)]
 #[oai(rename_all = "camelCase")]
 struct InstancesOutput {
     instances_stats: InstancesStats,
-    instances: HashMap<String, Vec<Channel>>,
+    instances: Arc<HashMap<String, Vec<Channel>>>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, Object, Clone)]
+#[derive(Debug, serde::Serialize, Object, Clone)]
 struct InstancesStats {
     count: usize,
     down: usize,
@@ -40,8 +40,8 @@ struct InstancesStats {
 struct Api<'a> {
     req_client: reqwest::Client,
     cfg: &'a Config,
-    channel_map: HashMap<String, Vec<Channel>>,
-    unique_channels: HashSet<Channel>,
+    channel_map: Arc<HashMap<String, Vec<Channel>>>,
+    unique_channels: Arc<HashSet<Channel>>,
     stats: InstancesStats,
 }
 
@@ -90,7 +90,7 @@ async fn get_all_channels(
     req_client: &reqwest::Client,
     instances: &HashMap<String, config::JustlogsInstance>,
 ) -> Vec<Result<(String, String), reqwest::Error>> {
-    let reqs = future::join_all(instances.keys().map(|url| async move {
+    future::join_all(instances.keys().map(|url| async move {
         let res = req_client
             .get(format!("https://{url}/channels"))
             .send()
@@ -98,9 +98,7 @@ async fn get_all_channels(
 
         Ok((url.clone(), res.text().await?))
     }))
-    .await;
-
-    reqs
+    .await
 }
 
 #[tokio::main]
@@ -135,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
     let mut all_channels: HashSet<Channel> = HashSet::new();
 
     for (url, text) in instance_data {
-        match serde_json::from_str::<ChannelsResponse>(&text) {
+        match serde_json::from_str::<ChannelsResponse>(text) {
             Ok(res) => {
                 for channel in &res.channels {
                     all_channels.insert(channel.clone());
@@ -151,8 +149,8 @@ async fn main() -> anyhow::Result<()> {
         Api {
             req_client,
             cfg,
-            channel_map: has,
-            unique_channels: all_channels,
+            channel_map: Arc::new(has),
+            unique_channels: Arc::new(all_channels),
             stats: InstancesStats {
                 down: downed_instances,
                 count: channels.len(),
