@@ -23,6 +23,14 @@ struct ChannelsOutput {
     channels: HashSet<Channel>,
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize, Object)]
+#[serde(rename_all = "camelCase")]
+#[oai(rename_all = "camelCase")]
+struct InstancesOutput {
+    instances_stats: InstancesStats,
+    instances: HashMap<String, Vec<Channel>>,
+}
+
 #[derive(Debug, serde::Deserialize, serde::Serialize, Object, Clone)]
 struct InstancesStats {
     count: usize,
@@ -53,6 +61,15 @@ impl Api<'static> {
         poem_openapi::payload::Json(ChannelsOutput {
             instances_stats: self.stats.clone(),
             channels: self.unique_channels.clone(),
+        })
+    }
+
+    /// List all instances
+    #[oai(path = "/instances", method = "get")]
+    async fn instances(&self) -> poem_openapi::payload::Json<InstancesOutput> {
+        poem_openapi::payload::Json(InstancesOutput {
+            instances_stats: self.stats.clone(),
+            instances: self.channel_map.clone(),
         })
     }
 }
@@ -141,8 +158,8 @@ async fn main() -> anyhow::Result<()> {
                 count: channels.len(),
             },
         },
-        "rustlog",
-        "1.0",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
     )
     .server(format!("http://localhost:{}", &cfg.port));
     let ui = api_service.redoc();
