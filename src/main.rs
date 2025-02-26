@@ -175,7 +175,6 @@ async fn main() -> anyhow::Result<()> {
         match result {
             Ok((url, channel)) => {
                 instance_data.push((url, channel));
-                dbg!(&instance_data);
             }
             Err(_err) => {
                 // Maybe print log here
