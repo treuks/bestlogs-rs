@@ -17,6 +17,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 mod config;
+mod umami;
 
 use config::Config;
 use futures::{Stream, StreamExt, stream};
@@ -160,9 +161,9 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = Box::leak(Box::new(config::get_config()?));
 
-    eprintln!("Initiated from config");
+    eprintln!("INFO: Initiated from config");
 
-    eprintln!("Getting data on all channels.");
+    eprintln!("INFO: Getting data on all channels.");
 
     let now = Instant::now();
 
@@ -196,9 +197,12 @@ async fn main() -> anyhow::Result<()> {
         kv.insert(url.to_string(), data.channels);
     }
 
-    eprintln!("Got channels, it took {}ms", now.elapsed().as_millis());
+    eprintln!(
+        "INFO: Got channels, it took {}ms",
+        now.elapsed().as_millis()
+    );
 
-    eprintln!("Starting up server: http://localhost:{}", &cfg.port);
+    eprintln!("INFO: Starting up server: http://localhost:{}", &cfg.port);
     let api_service = OpenApiService::new(
         Api {
             req_client,

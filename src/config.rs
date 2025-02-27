@@ -21,9 +21,9 @@ pub struct JustlogsInstance {
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct UmamiStats {
-    token: String,
-    id: String,
-    url: String,
+    pub token: String,
+    pub id: String,
+    pub url: String,
 }
 
 pub fn get_config() -> anyhow::Result<Config> {
