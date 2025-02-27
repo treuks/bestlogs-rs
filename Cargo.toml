@@ -2,6 +2,8 @@
 name = "bestlogs-rs"
 version = "0.1.0"
 edition = "2024"
+license = "Apache-2.0"
+
 
 [dependencies]
 poem = { version = "3", features = ["compression"] }
