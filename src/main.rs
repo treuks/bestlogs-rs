@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde_json::json;
 use thiserror::Error;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -21,9 +22,10 @@ mod umami;
 
 use config::Config;
 use futures::{Stream, StreamExt, stream};
-use poem::{Route, Server, listener::TcpListener};
+use poem::{Request, Route, Server, listener::TcpListener};
 use poem_openapi::payload::{self, Binary};
 use poem_openapi::{Object, OpenApi, OpenApiService, payload::PlainText};
+use umami::send_to_umami;
 
 #[derive(Debug, serde::Serialize, Object)]
 #[serde(rename_all = "camelCase")]
@@ -125,9 +127,9 @@ struct Channel {
 
 #[derive(Error, Debug)]
 enum ChannelsError {
-    #[error("Error while making a request")]
+    #[error("Error while making a request: {0:#}")]
     ReqwestError(#[from] reqwest::Error),
-    #[error("Error while deserializing")]
+    #[error("Error while deserializing: {0:#}")]
     DeserError(#[from] serde_json::Error),
 }
 
@@ -161,7 +163,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = Box::leak(Box::new(config::get_config()?));
 
-    eprintln!("INFO: Initiated from config");
+    eprintln!("INFO: Initiated from config.");
 
     eprintln!("INFO: Getting data on all channels.");
 
@@ -198,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     eprintln!(
-        "INFO: Got channels, it took {}ms",
+        "INFO: Got channels, it took {}ms.",
         now.elapsed().as_millis()
     );
 
