@@ -10,9 +10,11 @@ pub struct Config {
     pub recentmessages_instances: HashMap<String, JustlogsInstance>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub umami_stats: Option<UmamiStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alternative_ivr_url: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct JustlogsInstance {
     maintainer: String,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -18,13 +18,18 @@ static GLOBAL: Jemalloc = Jemalloc;
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 mod config;
+mod ivr;
+mod logs;
 mod umami;
 
 use config::Config;
 use futures::{Stream, StreamExt, stream};
-use poem::{Request, Route, Server, listener::TcpListener};
-use poem_openapi::payload::{self, Binary};
+use poem::{EndpointExt, Request, Route, Server, listener::TcpListener};
 use poem_openapi::{Object, OpenApi, OpenApiService, payload::PlainText};
+use poem_openapi::{
+    param::Path,
+    payload::{self, Binary},
+};
 use umami::send_to_umami;
 
 #[derive(Debug, serde::Serialize, Object)]
@@ -50,9 +55,30 @@ struct InstancesStats {
     down: usize,
 }
 
-struct Api<'a> {
+pub enum UserType<'a> {
+    Id(&'a str),
+    Login(&'a str),
+}
+
+pub fn parse_id_arg(arg: &str) -> Option<UserType> {
+    if arg.starts_with("id:") {
+        Some(UserType::Id(arg.strip_prefix("id:")?))
+    } else {
+        Some(UserType::Login(arg))
+    }
+}
+
+pub fn parse_name_arg(arg: &str) -> Option<UserType> {
+    if arg.starts_with("login:") {
+        Some(UserType::Login(arg.strip_prefix("login:")?))
+    } else {
+        Some(UserType::Id(arg))
+    }
+}
+
+struct Api {
     req_client: reqwest::Client,
-    cfg: &'a Config,
+    cfg: &'static Config,
     channel_map: Arc<HashMap<String, Vec<Channel>>>,
     unique_channels: Arc<HashSet<Channel>>,
     stats: InstancesStats,
@@ -68,15 +94,28 @@ enum ProfileResponseError {
     DumpFailure(PlainText<String>),
 }
 
+#[derive(poem_openapi::ApiResponse)]
+enum NamehistoryResponseError {
+    // @ZonianMidian FeelsWeirdMan
+    // This should be a 400 but it's not so I'm copying the behaviour.
+    #[oai(status = 500)]
+    InvalidFormat(PlainText<String>),
+    #[oai(status = 503)]
+    IvrFail,
+    #[oai(status = 404)]
+    NoSuchUser,
+}
+
 #[OpenApi(prefix_path = "/")]
-impl Api<'static> {
+impl Api {
     /// Hello world
     #[oai(path = "/", method = "get")]
     async fn index(&self) -> payload::PlainText<&'static str> {
         PlainText("Hello World")
     }
 
-    /// Get the prof file
+    /// # Get the prof file
+    ///
     /// This gives you a binary .pb.gz file which allows you (me) to debug the ram usage.
     #[oai(path = "/heap", method = "get")]
     async fn heap(&self) -> Result<payload::Binary<Vec<u8>>, ProfileResponseError> {
@@ -110,11 +149,73 @@ impl Api<'static> {
             instances: self.channel_map.clone(),
         })
     }
-}
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-struct ChannelsResponse {
-    channels: Vec<Channel>,
+    /// Get user name history
+    #[oai(path = "/namehistory/:user", method = "get")]
+    async fn namehistory(
+        &self,
+        user: Path<String>,
+    ) -> Result<payload::Json<HashSet<logs::NamehistoryResponse>>, NamehistoryResponseError> {
+        let req_client = self.req_client.clone();
+        let justlog_instances = &self.cfg.justlogs_instances;
+
+        let name = match parse_name_arg(&user) {
+            Some(n) => n,
+            None => {
+                return Err(NamehistoryResponseError::InvalidFormat(PlainText(
+                    "The value must be an ID or use 'login:' to refer to usernames. Example: 754201843 or login:zonianmidian".to_string(),
+                )));
+            }
+        };
+
+        let id = match name {
+            UserType::Id(id) => id.to_string(),
+            UserType::Login(login) => {
+                let ivr_res = ivr::get_ids_from_login(&self.cfg, &req_client, login).await;
+                let id = match ivr_res {
+                    Ok(res) => res.id,
+                    Err(err) => match err {
+                        ivr::IvrResponseError::ReqwestError(er) => {
+                            eprintln!("ERROR: {er}");
+                            return Err(NamehistoryResponseError::IvrFail);
+                        }
+                        ivr::IvrResponseError::DeserError(er) => {
+                            eprintln!("ERROR: {er}");
+                            return Err(NamehistoryResponseError::IvrFail);
+                        }
+                        ivr::IvrResponseError::NoInfo => {
+                            return Err(NamehistoryResponseError::NoSuchUser);
+                        }
+                    },
+                };
+                id
+            }
+        };
+
+        let mut namechanges = Vec::new();
+
+        let mut xd = logs::get_name_history(&req_client, &justlog_instances, &id).await;
+        while let Some(result) = xd.next().await {
+            match result {
+                Ok(res) => {
+                    namechanges.push(res);
+                }
+                Err(err) => {
+                    eprintln!("ERROR: {err}");
+                }
+            }
+        }
+
+        let mut namechangeset = HashSet::new();
+
+        for v in namechanges {
+            for vv in v {
+                namechangeset.insert(vv);
+            }
+        }
+
+        Ok(payload::Json(namechangeset))
+    }
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone, Object, Eq, Hash, PartialEq)]
@@ -123,34 +224,6 @@ struct Channel {
     #[serde(alias = "userID")]
     #[oai(rename = "userID")]
     user_id: String,
-}
-
-#[derive(Error, Debug)]
-enum ChannelsError {
-    #[error("Error while making a request: {0:#}")]
-    ReqwestError(#[from] reqwest::Error),
-    #[error("Error while deserializing: {0:#}")]
-    DeserError(#[from] serde_json::Error),
-}
-
-async fn get_all_channels<'a>(
-    req_client: &reqwest::Client,
-    instances: &'a HashMap<String, config::JustlogsInstance>,
-) -> impl Stream<Item = Result<(&'a str, ChannelsResponse), ChannelsError>> {
-    stream::iter(instances.keys())
-        .map(move |url| async move {
-            let res = req_client
-                .get(format!("https://{url}/channels"))
-                .send()
-                .await?;
-
-            let res_text = res.text().await?;
-
-            let json = serde_json::from_str::<ChannelsResponse>(&res_text)?;
-
-            Ok((url.as_str(), json))
-        })
-        .buffer_unordered(20)
 }
 
 #[tokio::main]
@@ -173,14 +246,14 @@ async fn main() -> anyhow::Result<()> {
     let mut downed_instances = 0;
 
     let binding = req_client.clone();
-    let mut xd = get_all_channels(&binding, &cfg.justlogs_instances).await;
+    let mut xd = logs::get_all_channels(&binding, &cfg.justlogs_instances).await;
     while let Some(result) = xd.next().await {
         match result {
             Ok((url, channel)) => {
                 instance_data.push((url, channel));
             }
-            Err(_err) => {
-                // Maybe print log here
+            Err(err) => {
+                eprintln!("ERROR: {err}");
                 downed_instances += 1;
             }
         }
@@ -222,7 +295,6 @@ async fn main() -> anyhow::Result<()> {
     .server(format!("http://localhost:{}", &cfg.port));
     let ui = api_service.redoc();
     let app = Route::new().nest("/", api_service).nest("/docs", ui);
-
     let _ = Server::new(TcpListener::bind(format!("127.0.0.1:{}", &cfg.port)))
         .run(app)
         .await;

@@ -34,7 +34,7 @@ pub enum UmamiError {
 ///
 pub async fn send_to_umami(
     cfg: &Config,
-    req_client: reqwest::Client,
+    req_client: &reqwest::Client,
     req: &poem::Request,
     name: &str,
     payload: serde_json::Value,
