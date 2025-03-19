@@ -206,7 +206,7 @@ impl Api {
             }
         }
 
-        let mut namechangevec = Vec::new();
+        let mut namechangevec = Vec::with_capacity(self.cfg.justlogs_instances.len());
 
         let mut all_names = HashSet::new();
 
@@ -217,7 +217,7 @@ impl Api {
             }
         }
 
-        let mut forsen = Vec::new();
+        let mut filtered_responses = Vec::new();
 
         for name in all_names {
             if let Some(xd) = namechangevec
@@ -225,11 +225,11 @@ impl Api {
                 .filter(|x| x.user_login == name)
                 .min_by_key(|x| x.first_timestamp.timestamp())
             {
-                forsen.push(xd.clone());
+                filtered_responses.push(xd.clone());
             }
         }
 
-        Ok(payload::Json(forsen))
+        Ok(payload::Json(filtered_responses))
     }
 }
 
