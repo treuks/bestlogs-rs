@@ -7,7 +7,7 @@ license = "Apache-2.0"
 
 [dependencies]
 poem = { version = "3", features = ["compression"] }
-poem-openapi = { version = "5", features = ["redoc"] }
+poem-openapi = { version = "5", features = ["redoc", "chrono"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures = "0.3"
 
@@ -19,6 +19,7 @@ thiserror = "2"
 anyhow = "1.0"
 
 mini-moka = "0.10"
+chrono = { version = "0.4.40", features = ["serde"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.6", features = [

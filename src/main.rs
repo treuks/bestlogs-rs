@@ -155,7 +155,7 @@ impl Api {
     async fn namehistory(
         &self,
         user: Path<String>,
-    ) -> Result<payload::Json<HashSet<logs::NamehistoryResponse>>, NamehistoryResponseError> {
+    ) -> Result<payload::Json<Vec<logs::NamehistoryResponse>>, NamehistoryResponseError> {
         let req_client = self.req_client.clone();
         let justlog_instances = &self.cfg.justlogs_instances;
 
@@ -206,15 +206,30 @@ impl Api {
             }
         }
 
-        let mut namechangeset = HashSet::new();
+        let mut namechangevec = Vec::new();
+
+        let mut all_names = HashSet::new();
 
         for v in namechanges {
             for vv in v {
-                namechangeset.insert(vv);
+                all_names.insert(vv.user_login.clone());
+                namechangevec.push(vv);
             }
         }
 
-        Ok(payload::Json(namechangeset))
+        let mut forsen = Vec::new();
+
+        for name in all_names {
+            if let Some(xd) = namechangevec
+                .iter()
+                .filter(|x| x.user_login == name)
+                .min_by_key(|x| x.first_timestamp.timestamp())
+            {
+                forsen.push(xd.clone());
+            }
+        }
+
+        Ok(payload::Json(forsen))
     }
 }
 

@@ -36,7 +36,6 @@ pub async fn get_ids_from_login(
         .send()
         .await?;
 
-    dbg!(&res);
     let bytes = res.bytes().await?;
 
     match serde_json::from_slice::<Vec<IvrRequestResponse>>(&bytes) {

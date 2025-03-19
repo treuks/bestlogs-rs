@@ -6,6 +6,7 @@ use crate::Channel;
 use crate::UserType;
 use crate::config;
 use crate::config::Config;
+use chrono::Utc;
 use futures::{Stream, StreamExt, stream};
 use poem_openapi::Object;
 use thiserror::Error;
@@ -43,11 +44,11 @@ pub async fn get_all_channels<'a>(
         .buffer_unordered(20)
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Eq, Hash, PartialEq, Object)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Eq, Hash, PartialEq, Object, Clone)]
 pub struct NamehistoryResponse {
     pub user_login: String,
-    pub last_timestamp: String,
-    pub first_timestamp: String,
+    pub last_timestamp: chrono::DateTime<Utc>,
+    pub first_timestamp: chrono::DateTime<Utc>,
 }
 
 pub async fn get_name_history<'a>(
